@@ -1797,6 +1797,11 @@ def main():
                     <div style='font-weight: bold;'>Aurélie Boisbunon</div>
                     <div style='font-size: 0.9em; color: #6b7280;'>AI Researcher & Mathematician</div>
                 </div>
+                 <div>
+                    <div style='font-size: 2em;'>🐱</div>
+                    <div style='font-weight: bold;'>Hinata Flamary</div>
+                    <div style='font-size: 0.9em; color: #6b7280;'>AI Tester</div>
+                </div>
                 <div>
                     <div style='font-size: 2em;'>🐼</div>
                     <div style='font-weight: bold;'>Illyyne Saffar</div>
