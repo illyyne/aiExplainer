@@ -51,7 +51,7 @@ def load_model():
         model.eval()
         return model, metadata
     except Exception as e:
-        st.error(f"❌ {e}")
+        st.error(f"{e}")
         return None, None
 
 def compute_gradcam_with_image_dependency(model, image_tensor, target_class, image_hash):
@@ -895,12 +895,78 @@ def classify_image(model, image, metadata, image_num):
     
     return pred_class, confidence, all_probs, heatmap, animation_frames
 
-def load_random_images(num=12):
+def load_random_images(num=12, filter_type='all', model=None, metadata=None):
+    """
+    Load random images with optional filtering
+    
+    Args:
+        num: Number of images to load
+        filter_type: 'all', 'correct', or 'wrong'
+        model: Model for predictions (needed for filtering)
+        metadata: Metadata with classes (needed for filtering)
+    """
     images_dir = Path('images/aliens')
     csv_path = Path('images/class/classification.csv')
     if not csv_path.exists():
         return []
+    
     df = pd.read_csv(csv_path)
+    
+    # If filtering by correct/wrong, we need to predict all images first
+    if filter_type in ['correct', 'wrong'] and model is not None and metadata is not None:
+        all_images = []
+        for _, row in df.iterrows():
+            img_num = str(row['Image']).zfill(3)
+            for ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                img_path = images_dir / f"{img_num}{ext}"
+                if img_path.exists():
+                    all_images.append({
+                        'path': str(img_path), 
+                        'label': row['Label'], 
+                        'number': row['Image']
+                    })
+                    break
+        
+        # Quick predictions to filter
+        filtered_images = []
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        
+        for img_data in all_images:
+            try:
+                image = Image.open(img_data['path'])
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                image_tensor = transform(image).unsqueeze(0).to(device)
+                
+                with torch.no_grad():
+                    outputs, _ = model(image_tensor)
+                    pred_class = torch.argmax(outputs, dim=1).item()
+                    predicted = metadata['classes'][pred_class]
+                
+                is_correct = (predicted == img_data['label'])
+                
+                if (filter_type == 'correct' and is_correct) or \
+                   (filter_type == 'wrong' and not is_correct):
+                    filtered_images.append(img_data)
+            except:
+                continue
+        
+        # Sample from filtered results
+        if filtered_images:
+            samples = np.random.choice(
+                len(filtered_images), 
+                min(num, len(filtered_images)), 
+                replace=False
+            )
+            return [filtered_images[i] for i in samples]
+        else:
+            return []
+    
+    # Default: random sampling
     samples = df.sample(min(num, len(df)))
     image_data = []
     for _, row in samples.iterrows():
@@ -1039,9 +1105,10 @@ def main():
             🎓 **Éducatif:** C'est cool et fun!
             """)
     
-    tab1, tab2 = st.tabs([
-        "🎯 Classification & Grad Avancé", 
-        "🎬 Animation Pédagogique Interactive"
+    tab1, tab2, tab3 = st.tabs([
+        "🎯 Classification & Grad-CAM Avancé", 
+        "🎬 Animation Pédagogique Interactive",
+        "🔍 Analyse des Erreurs"
     ])
     
     if 'random_images' not in st.session_state:
@@ -1053,10 +1120,71 @@ def main():
         with col_left:
             st.subheader("🎲 Images")
             
+            # Filter selection
+            st.markdown("**Filtrer par:**")
+            filter_cols = st.columns(3)
+            
+            with filter_cols[0]:
+                if st.button("🎯 Toutes", width='stretch', key="btn_all", 
+                            help="Afficher toutes les images aléatoirement"):
+                    st.session_state.filter_type = 'all'
+                    st.session_state.random_images = load_random_images(12, 'all')
+                    if 'selected_image' in st.session_state:
+                        del st.session_state.selected_image
+                    if 'last_analyzed' in st.session_state:
+                        del st.session_state.last_analyzed
+                    st.rerun()
+            
+            with filter_cols[1]:
+                if st.button("✅ Correctes", width='stretch', key="btn_correct",
+                            help="Montrer seulement les images bien prédites"):
+                    with st.spinner("🔍 Recherche des bonnes prédictions..."):
+                        st.session_state.filter_type = 'correct'
+                        st.session_state.random_images = load_random_images(
+                            12, 'correct', model, metadata
+                        )
+                        if 'selected_image' in st.session_state:
+                            del st.session_state.selected_image
+                        if 'last_analyzed' in st.session_state:
+                            del st.session_state.last_analyzed
+                    st.rerun()
+            
+            with filter_cols[2]:
+                if st.button("❌ Erreurs", width='stretch', key="btn_wrong",
+                            help="Montrer seulement les erreurs du modèle",
+                            type="primary"):
+                    with st.spinner("🔍 Recherche des erreurs..."):
+                        st.session_state.filter_type = 'wrong'
+                        st.session_state.random_images = load_random_images(
+                            12, 'wrong', model, metadata
+                        )
+                        if 'selected_image' in st.session_state:
+                            del st.session_state.selected_image
+                        if 'last_analyzed' in st.session_state:
+                            del st.session_state.last_analyzed
+                    st.rerun()
+            
+            # Show current filter
+            current_filter = st.session_state.get('filter_type', 'all')
+            filter_labels = {
+                'all': '🎯 Toutes les images',
+                'correct': '✅ Prédictions correctes',
+                'wrong': '❌ Erreurs du modèle'
+            }
+            st.info(f"**Filtre actif:** {filter_labels.get(current_filter, 'Toutes')}")
+            
+            st.markdown("---")
+            
+            # Action buttons
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("🔄 Nouvelles", width='stretch', key="btn_new_images"):
-                    st.session_state.random_images = load_random_images(12)
+                    current_filter = st.session_state.get('filter_type', 'all')
+                    st.session_state.random_images = load_random_images(
+                        12, current_filter, 
+                        model if current_filter != 'all' else None,
+                        metadata if current_filter != 'all' else None
+                    )
                     # Clear cache to avoid file errors
                     if 'selected_image' in st.session_state:
                         del st.session_state.selected_image
@@ -1500,8 +1628,8 @@ def main():
                 # Speed control
                 speed = st.select_slider(
                     "Vitesse d'animation",
-                    options=[0.5, 1.0, 1.5, 2.0, 2.5],
-                    value=1.5,
+                    options=[0.5, 1.0, 1.5, 2.0, 2.5, 3, 4, 5, 7.5, 10],
+                    value=3,
                     format_func=lambda x: f"{x}s par étape",
                     help="Choisissez la durée d'affichage de chaque frame"
                 )
@@ -1600,6 +1728,243 @@ def main():
                 - Mode auto-play
                 - Export en GIF
                 """)
+    
+    with tab3:
+        st.subheader("🔍 Analyse Approfondie des Erreurs du Modèle")
+        
+        # Check if analysis file exists
+        analysis_path = Path('models/prediction_analysis.json')
+        
+        if not analysis_path.exists():
+            st.warning("⚠️ Aucune analyse trouvée. Lancez d'abord l'analyse complète.")
+            
+            st.markdown("""
+            ### 📊 Comment analyser les erreurs?
+            
+            Cette fonctionnalité vous permet d'explorer en détail toutes les erreurs du modèle.
+            
+            **Étape 1: Analyser tout le dataset**
+            ```bash
+            python analyze_and_save_errors.py
+            ```
+            
+            **Ce que fait le script:**
+            - 🔍 Prédit **toutes** les images du dataset
+            - 📝 Sauvegarde les résultats dans `models/prediction_analysis.json`
+            - ✅ Identifie les prédictions correctes
+            - ❌ Identifie toutes les erreurs
+            - 📊 Calcule les statistiques (précision, matrice de confusion)
+            
+            **Ensuite:**
+            - Rechargez cette page
+            - Explorez les erreurs dans cet onglet!
+            """)
+            
+            if st.button("▶️ Lancer l'analyse maintenant", type="primary", key="btn_run_analysis"):
+                with st.spinner("🔬 Analyse en cours... Cela peut prendre 1-2 minutes..."):
+                    import subprocess
+                    result = subprocess.run(
+                        ['python', 'analyze_and_save_errors.py'],
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode == 0:
+                        st.success("✅ Analyse terminée! Rechargez la page.")
+                        st.code(result.stdout)
+                    else:
+                        st.error("❌ Erreur lors de l'analyse")
+                        st.code(result.stderr)
+        
+        else:
+            # Load analysis results
+            with open(analysis_path, 'r') as f:
+                analysis = json.load(f)
+            
+            stats = analysis['stats']
+            errors = analysis['errors']
+            
+            # Statistics dashboard
+            st.markdown("### 📊 Statistiques Globales")
+            
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            
+            with col_stat1:
+                st.metric(
+                    "Total Images", 
+                    stats['total_images'],
+                    help="Nombre total d'images analysées"
+                )
+            
+            with col_stat2:
+                st.metric(
+                    "Précision", 
+                    f"{stats['accuracy']*100:.1f}%",
+                    delta=f"{stats['correct_predictions']} correctes",
+                    delta_color="normal",
+                    help="Pourcentage de prédictions correctes"
+                )
+            
+            with col_stat3:
+                st.metric(
+                    "Erreurs", 
+                    stats['errors'],
+                    delta=f"{stats['error_rate']*100:.1f}%",
+                    delta_color="inverse",
+                    help="Nombre et pourcentage d'erreurs"
+                )
+            
+            with col_stat4:
+                if st.button("🔄 Re-analyser", key="btn_reanalyze"):
+                    import subprocess
+                    with st.spinner("🔬 Ré-analyse en cours..."):
+                        subprocess.run(['python', 'analyze_and_save_errors.py'])
+                        st.rerun()
+            
+            st.markdown("---")
+            
+            # Confusion matrix
+            st.markdown("### 🔀 Matrice de Confusion (Top Erreurs)")
+            
+            confusion = stats['confusion_matrix']
+            if confusion:
+                conf_df = pd.DataFrame([
+                    {'Type d\'Erreur': k, 'Nombre': v} 
+                    for k, v in sorted(confusion.items(), key=lambda x: x[1], reverse=True)
+                ])
+                
+                col_chart, col_table = st.columns([2, 1])
+                
+                with col_chart:
+                    st.bar_chart(conf_df.set_index('Type d\'Erreur')['Nombre'])
+                
+                with col_table:
+                    st.dataframe(conf_df, hide_index=True, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Error browser
+            st.markdown("### 🔎 Explorer les Erreurs")
+            
+            if errors:
+                st.info(f"📌 {len(errors)} erreurs trouvées")
+                
+                # Filter by type
+                error_types = list(set([f"{e['true_label']} → {e['predicted_label']}" for e in errors]))
+                
+                col_filter1, col_filter2 = st.columns(2)
+                
+                with col_filter1:
+                    selected_type = st.selectbox(
+                        "Filtrer par type d'erreur:",
+                        ['Toutes'] + sorted(error_types),
+                        key="error_type_filter"
+                    )
+                
+                with col_filter2:
+                    sort_by = st.selectbox(
+                        "Trier par:",
+                        ['Confiance (élevée → faible)', 'Confiance (faible → élevée)', 'Numéro d\'image'],
+                        key="sort_by"
+                    )
+                
+                # Filter errors
+                filtered_errors = errors
+                if selected_type != 'Toutes':
+                    filtered_errors = [
+                        e for e in errors 
+                        if f"{e['true_label']} → {e['predicted_label']}" == selected_type
+                    ]
+                
+                # Sort errors
+                if sort_by == 'Confiance (élevée → faible)':
+                    filtered_errors = sorted(filtered_errors, key=lambda x: x['confidence'], reverse=True)
+                elif sort_by == 'Confiance (faible → élevée)':
+                    filtered_errors = sorted(filtered_errors, key=lambda x: x['confidence'])
+                else:
+                    filtered_errors = sorted(filtered_errors, key=lambda x: x['image_number'])
+                
+                st.markdown(f"**{len(filtered_errors)} erreur(s) après filtrage**")
+                
+                # Pagination
+                items_per_page = 12
+                total_pages = (len(filtered_errors) + items_per_page - 1) // items_per_page
+                
+                if total_pages > 1:
+                    page = st.selectbox(
+                        "Page:",
+                        range(1, total_pages + 1),
+                        key="error_page"
+                    ) - 1
+                else:
+                    page = 0
+                
+                start_idx = page * items_per_page
+                end_idx = min(start_idx + items_per_page, len(filtered_errors))
+                page_errors = filtered_errors[start_idx:end_idx]
+                
+                # Display errors in grid
+                cols = st.columns(3)
+                for i, error in enumerate(page_errors):
+                    with cols[i % 3]:
+                        try:
+                            img = Image.open(error['image_path'])
+                            st.image(img, use_container_width=True)
+                            
+                            # Error details
+                            true_emoji = species_info[error['true_label']]['emoji']
+                            pred_emoji = species_info[error['predicted_label']]['emoji']
+                            
+                            st.markdown(f"""
+                            <div style='background: #fef2f2; padding: 10px; border-radius: 8px; 
+                                        border-left: 4px solid #dc2626;'>
+                                <div style='font-size: 0.9em; color: #991b1b;'>
+                                    <strong>#{error['image_number']}</strong>
+                                </div>
+                                <div style='margin: 5px 0;'>
+                                    <span style='color: #059669;'>{true_emoji} {error['true_label']}</span>
+                                    <span style='color: #6b7280;'> → </span>
+                                    <span style='color: #dc2626;'>{pred_emoji} {error['predicted_label']}</span>
+                                </div>
+                                <div style='font-size: 0.85em; color: #b91c1c;'>
+                                    Confiance: <strong>{error['confidence']*100:.1f}%</strong>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Button to analyze
+                            if st.button(f"🔬 Analyser", key=f"analyze_error_{error['image_number']}", 
+                                       use_container_width=True):
+                                # Load this error into tab1 for detailed analysis
+                                st.session_state.selected_image = {
+                                    'path': error['image_path'],
+                                    'label': error['true_label'],
+                                    'number': error['image_number']
+                                }
+                                st.session_state.last_analyzed = None
+                                st.info("✅ Image chargée! Allez dans l'onglet 'Classification' pour l'analyser.")
+                                
+                        except Exception as e:
+                            st.error(f"Erreur: {e}")
+                
+                # Summary of this page
+                if page_errors:
+                    st.markdown("---")
+                    st.markdown("#### 📈 Résumé de cette page")
+                    
+                    avg_confidence = sum(e['confidence'] for e in page_errors) / len(page_errors)
+                    st.metric("Confiance moyenne", f"{avg_confidence*100:.1f}%")
+                    
+                    st.markdown("**Distribution des erreurs:**")
+                    page_confusion = {}
+                    for e in page_errors:
+                        key = f"{e['true_label']} → {e['predicted_label']}"
+                        page_confusion[key] = page_confusion.get(key, 0) + 1
+                    
+                    for error_type, count in sorted(page_confusion.items(), key=lambda x: x[1], reverse=True):
+                        st.write(f"- {error_type}: {count}")
+            
+            else:
+                st.success("🎉 Aucune erreur trouvée! Le modèle est parfait!")
     
     # Perfect footer - Simplified for Streamlit compatibility
     st.markdown("---")
