@@ -1,7 +1,7 @@
 """
-Streamlit App - TRULY FINAL VERSION
-1. Grad-CAM that ACTUALLY changes per image (saves image hash in computation)
-2. REAL animated GIF showing transformation stages
+Streamlit App - Final Version For deplotment
+1. Static Grad calculation that changes a little bit per image (saves image hash in computation)
+2. REAL animated GIF showing transformation stages to make it easier to understand 
 3. Horizontal layout with visual connections
 """
 
@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import io
 import hashlib
-import time  # Add this import
+import time  
+from train_model import AlienCNN
 
 st.set_page_config(page_title="IA Classificateur", page_icon="🛸", layout="wide")
 
@@ -37,22 +38,6 @@ st.markdown("""
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class AlienCNN(nn.Module):
-    def __init__(self, num_classes=4):
-        super(AlienCNN, self).__init__()
-        self.backbone = models.resnet18(pretrained=False)
-        num_features = self.backbone.fc.in_features
-        self.backbone.fc = nn.Linear(num_features, num_classes)
-        self.features = nn.Sequential(*list(self.backbone.children())[:-2])
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.classifier = nn.Linear(num_features, num_classes)
-        
-    def forward(self, x):
-        features = self.features(x)
-        pooled = self.avgpool(features)
-        pooled = torch.flatten(pooled, 1)
-        output = self.classifier(pooled)
-        return output, features
 
 @st.cache_resource
 def load_model():
@@ -71,7 +56,7 @@ def load_model():
 
 def compute_gradcam_with_image_dependency(model, image_tensor, target_class, image_hash):
     """
-    ULTIMATE Grad-CAM with proper gradient computation
+    Static Grad with proper gradient computation
     Creates truly unique heatmaps for each image
     """
     model.eval()
@@ -277,7 +262,7 @@ def create_heatmap_comparison_figure(image, visualizations, predicted_class, tru
 def create_moving_filter_animation(image, image_tensor, model, pred_class, metadata):
     """Create ULTIMATE animation with spectacular visual effects"""
     frames = []
-    W, H = 2200, 900  # Even bigger resolution
+    W, H = 2400, 1000  # Larger resolution for better text visibility
     
     # Denormalize
     img_np = image_tensor[0].cpu().detach().numpy().transpose(1, 2, 0)
@@ -470,8 +455,8 @@ def create_moving_filter_animation(image, image_tensor, model, pred_class, metad
         draw_f.rectangle([(px, py), (px+100, py+100)], outline='#f59e0b', width=8)
         draw_f.text((px+50, py+110), "Kernel", fill='#f59e0b', font=font_small, anchor="mm")
         
-        # Show what pixels the kernel is looking at with HEATMAP
-        zoom_x, zoom_y = 200, 750
+        # Show what pixels the kernel is looking at with HEATMAP - MOVED TO RIGHT
+        zoom_x, zoom_y = 1850, 250  # Moved to right side, higher up
         draw_f.rectangle([(zoom_x-10, zoom_y-40), (zoom_x+210, zoom_y-10)], 
                         fill='white', outline='#f59e0b', width=2)
         draw_f.text((zoom_x+100, zoom_y-25), "🔍 Pixels analysés", 
@@ -517,6 +502,7 @@ def create_moving_filter_animation(image, image_tensor, model, pred_class, metad
         
         draw_f.text((zoom_x+105, zoom_y+220), "Valeurs pixel (0-255)", 
                    fill='#6b7280', font=font_small, anchor="mm")
+
         
         # Convolution operation display
         op_x, op_y = 800, 350
@@ -526,15 +512,40 @@ def create_moving_filter_animation(image, image_tensor, model, pred_class, metad
         draw_f.text((op_x+150, op_y-50), "Kernel 3×3", fill='#f59e0b', font=font_title, anchor="mm")
         draw_f.text((op_x+150, op_y-80), "🎨 Filtre Coloré", fill='#6b7280', font=font_small, anchor="mm")
         
-        kernel_values = [
-            ['1', '0', '-1'],
-            ['2', '0', '-2'],
-            ['1', '0', '-1']
-        ] if filter_idx % 2 == 0 else [
-            ['1', '2', '1'],
-            ['0', '0', '0'],
-            ['-1', '-2', '-1']
+        # 6 DIFFERENT kernels for each filter type
+        all_kernels = [
+            # Filter 0: Vertical edges (Sobel X)
+            [['1', '0', '-1'],
+             ['2', '0', '-2'],
+             ['1', '0', '-1']],
+            
+            # Filter 1: Horizontal edges (Sobel Y)
+            [['1', '2', '1'],
+             ['0', '0', '0'],
+             ['-1', '-2', '-1']],
+            
+            # Filter 2: Diagonal edges
+            [['2', '1', '0'],
+             ['1', '0', '-1'],
+             ['0', '-1', '-2']],
+            
+            # Filter 3: Corner detection (Laplacian)
+            [['0', '-1', '0'],
+             ['-1', '2', '-1'],
+             ['0', '-1', '0']],
+            
+            # Filter 4: High-pass filter
+            [['-1', '-1', '-1'],
+             ['-1', '2', '-1'],
+             ['-1', '-1', '-1']],
+            
+            # Filter 5: Emboss filter
+            [['-2', '-1', '0'],
+             ['-1', '1', '1'],
+             ['0', '1', '2']]
         ]
+        
+        kernel_values = all_kernels[filter_idx]
         
         # Create color mapping: -2 to +2 mapped to blue→white→red
         def value_to_color(val_str):
@@ -638,40 +649,40 @@ def create_moving_filter_animation(image, image_tensor, model, pred_class, metad
         draw_f.rectangle([(1395, 295), (1805, 705)], outline=color_main, width=6)
         draw_f.text((1600, 730), "Feature Map", fill=color_main, font=font_large, anchor="mm")
         
-        # Explanation box FOR KIDS
-        expl_y = H - 150
+        # Explanation box FOR KIDS - adjusted for 2400px width
+        expl_y = H - 160
         
         # Background with kid-friendly colors
-        draw_f.rectangle([(150, expl_y), (2050, expl_y+110)], 
+        draw_f.rectangle([(150, expl_y), (W-150, expl_y+120)], 
                         fill='#fef3c7', outline='#f59e0b', width=4)
         
         # Icon
-        draw_f.text((200, expl_y+55), "👶", font=font_huge, anchor="mm")
+        draw_f.text((220, expl_y+60), "👶", font=font_huge, anchor="mm")
         
         # Simple explanation for kids
         kid_explanations = [
             "Le filtre cherche les lignes verticales | (debout)",
             "Le filtre cherche les lignes horizontales — (couchées)",  
-            "Le filtre trouve les textures (comme du tissu ou des rayures)",
+            "Le filtre trouve les diagonales / \\ (en biais)",
             "Le filtre détecte les coins ⌞⌟ (angles)",
-            "Le filtre reconnaît les formes ○△□ (rond, triangle, carré)",
-            "Le filtre repère les motifs qui se répètent ⚪⚪⚪"
+            "Le filtre repère les contrastes forts (différences de couleur)",
+            "Le filtre crée des effets de relief (3D)"
         ]
         
-        draw_f.text((350, expl_y+30), "💡 Pour les enfants:", 
+        draw_f.text((380, expl_y+35), "💡 Pour les enfants:", 
                    fill='#92400e', font=font_large, anchor="lm")
-        draw_f.text((350, expl_y+70), kid_explanations[filter_idx], 
+        draw_f.text((380, expl_y+80), kid_explanations[filter_idx], 
                    fill='#78350f', font=font_med, anchor="lm")
         
         # Color explanation on the right
-        draw_f.text((1600, expl_y+30), "🎨 Code couleur:", 
+        draw_f.text((1700, expl_y+35), "🎨 Code couleur:", 
                    fill='#92400e', font=font_large, anchor="lm")
-        draw_f.text((1600, expl_y+70), "🔥 Rouge=Fort • ⚪ Blanc=Moyen • ❄️ Bleu=Faible", 
+        draw_f.text((1700, expl_y+80), "🔥 Rouge=Fort • ⚪ Blanc=Moyen • ❄️ Bleu=Faible", 
                    fill='#78350f', font=font_med, anchor="lm")
         
-        # Progress
-        draw_f.rectangle([(100, H-50), (2100, H-30)], outline='#e5e7eb', width=2)
-        progress_w = 100 + ((filter_idx+3)/10) * 2000
+        # Progress bar - adjusted for new width
+        draw_f.rectangle([(100, H-50), (W-100, H-30)], outline='#e5e7eb', width=2)
+        progress_w = 100 + ((filter_idx+3)/10) * (W-200)
         draw_f.rectangle([(100, H-50), (progress_w, H-30)], fill=color_main)
         draw_f.text((W//2, H-60), f"{filter_idx+3}/10", fill='#6b7280', font=font_small, anchor="mm")
         
@@ -814,204 +825,6 @@ def create_moving_filter_animation(image, image_tensor, model, pred_class, metad
     
     return frames
 
-    """
-    Create HIGH-QUALITY animation frames showing:
-    Frame 1: Raw image
-    Frame 2: RGB decomposition
-    Frame 3-6: Filters moving across image
-    Frame 7: Feature maps
-    Frame 8: Softmax output
-    """
-    frames = []
-    
-    # Use higher resolution: 1600x600 instead of 1200x400
-    frame_width = 1800  # Increased for better display
-    frame_height = 650   # More vertical space
-    
-    # Denormalize image
-    img_np = image_tensor[0].cpu().detach().numpy().transpose(1, 2, 0)
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    img_np = std * img_np + mean
-    img_np = np.clip(img_np, 0, 1)
-    img_np = (img_np * 255).astype(np.uint8)
-    
-    # Get model outputs
-    with torch.no_grad():
-        layers = list(model.features.children())
-        
-        # Conv1 output
-        conv1_out = layers[0](image_tensor)
-        
-        # Final features
-        features_out = model.features(image_tensor)
-        
-        # Final prediction
-        pooled = model.avgpool(features_out)
-        flattened = torch.flatten(pooled, 1)
-        logits = model.classifier(flattened)
-        probs = F.softmax(logits, dim=1)[0]
-    
-    # Initialize fonts
-    try:
-        font_large = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
-        font_med = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
-    except:
-        font_large = None
-        font_med = None
-    
-    # FRAME 1: Raw image - HIGHER QUALITY
-    frame1 = Image.new('RGB', (frame_width, frame_height), 'white')
-    draw = ImageDraw.Draw(frame1)
-    
-    # Add step indicator at top
-    draw.rectangle([(0, 0), (frame_width, 60)], fill='#667eea')
-    draw.text((frame_width//2, 30), "ÉTAPE 1/8: IMAGE D'ENTRÉE", fill='white', font=font_large, anchor="mm")
-    
-    # Larger image with better quality
-    img_pil = Image.fromarray(img_np)
-    img_pil = img_pil.resize((500, 500), Image.Resampling.LANCZOS)
-    frame1.paste(img_pil, (650, 80))
-    
-    # Add border around image
-    draw.rectangle([(648, 78), (1152, 582)], outline='#667eea', width=3)
-    
-    # Add text with better positioning
-    draw.text((900, 600), "📸 Image Originale RGB (224×224×3)", fill='black', font=font_large, anchor="mm")
-    frames.append(frame1)
-    
-    # FRAME 2: RGB Decomposition - IMPROVED
-    frame2 = Image.new('RGB', (frame_width, frame_height), 'white')
-    draw2 = ImageDraw.Draw(frame2)
-    
-    # Step indicator
-    draw2.rectangle([(0, 0), (frame_width, 60)], fill='#667eea')
-    draw2.text((frame_width//2, 30), "ÉTAPE 2/8: DÉCOMPOSITION RGB", fill='white', font=font_large, anchor="mm")
-    
-    # Original
-    img_display = img_pil.resize((400, 400), Image.Resampling.LANCZOS)
-    frame2.paste(img_display, (200, 125))
-    draw2.rectangle([(198, 123), (602, 527)], outline='#667eea', width=3)
-    draw2.text((400, 545), "Original RGB", fill='black', font=font_med, anchor="mm")
-    
-    # Large arrow with glow effect
-    draw2.text((650, 300), "→", fill='#3b82f6', font=font_large, anchor="mm")
-    draw2.text((649, 299), "→", fill='#60a5fa', font=font_large, anchor="mm")  # Glow
-    
-    # RGB channels with better quality and labels
-    r_img = np.zeros_like(img_np)
-    r_img[:, :, 0] = img_np[:, :, 0]
-    r_pil = Image.fromarray(r_img).resize((180, 180), Image.Resampling.LANCZOS)
-    frame2.paste(r_pil, (850, 100))
-    draw2.rectangle([(848, 98), (1032, 282)], outline='#ef4444', width=3)
-    draw2.text((940, 295), "🔴 Canal Rouge", fill='#ef4444', font=font_med, anchor="mm")
-    
-    g_img = np.zeros_like(img_np)
-    g_img[:, :, 1] = img_np[:, :, 1]
-    g_pil = Image.fromarray(g_img).resize((180, 180), Image.Resampling.LANCZOS)
-    frame2.paste(g_pil, (1100, 100))
-    draw2.rectangle([(1098, 98), (1282, 282)], outline='#10b981', width=3)
-    draw2.text((1190, 295), "🟢 Canal Vert", fill='#10b981', font=font_med, anchor="mm")
-    
-    b_img = np.zeros_like(img_np)
-    b_img[:, :, 2] = img_np[:, :, 2]
-    b_pil = Image.fromarray(b_img).resize((180, 180), Image.Resampling.LANCZOS)
-    frame2.paste(b_pil, (1350, 100))
-    draw2.rectangle([(1348, 98), (1532, 282)], outline='#3b82f6', width=3)
-    draw2.text((1440, 295), "🔵 Canal Bleu", fill='#3b82f6', font=font_med, anchor="mm")
-    
-    # Add explanation
-    draw2.text((frame_width//2, 600), "L'image est séparée en 3 canaux de couleur indépendants", 
-               fill='gray', font=font_med, anchor="mm")
-    
-    frames.append(frame2)
-    
-    # FRAMES 3-6: Moving filters - BETTER QUALITY
-    conv1_np = conv1_out[0].cpu().numpy()
-    for filter_idx in range(4):
-        frame = Image.new('RGB', (frame_width, frame_height), 'white')
-        draw_f = ImageDraw.Draw(frame)
-        
-        # Show original
-        frame.paste(img_display, (100, 100))
-        
-        # Arrow
-        draw_f.text((520, 280), "→", fill='purple', font=font_large)
-        
-        # Filter visualization with ANTIALIASING
-        fmap = conv1_np[filter_idx]
-        fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-8)
-        fmap = (fmap * 255).astype(np.uint8)
-        fmap_colored = cv2.applyColorMap(fmap, cv2.COLORMAP_JET)
-        fmap_colored = cv2.cvtColor(fmap_colored, cv2.COLOR_BGR2RGB)
-        fmap_pil = Image.fromarray(fmap_colored).resize((350, 350), Image.Resampling.LANCZOS)
-        
-        frame.paste(fmap_pil, (700, 125))
-        draw_f.text((850, 490), f"🔬 Filtre Convolutif {filter_idx + 1}", fill='black', font=font_large)
-        
-        # Arrow to result
-        draw_f.text((1070, 280), "→", fill='orange', font=font_large)
-        
-        # Result
-        result_small = Image.fromarray(fmap_colored).resize((200, 200), Image.Resampling.LANCZOS)
-        frame.paste(result_small, (1200, 200))
-        draw_f.text((1250, 420), "Sortie", fill='black', font=font_med)
-        
-        frames.append(frame)
-    
-    # FRAME 7: Feature maps - CLEANER LAYOUT
-    frame7 = Image.new('RGB', (frame_width, frame_height), 'white')
-    draw7 = ImageDraw.Draw(frame7)
-    
-    feat_np = features_out[0].cpu().numpy()
-    for i in range(16):
-        fmap = feat_np[i]
-        fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-8)
-        fmap = (fmap * 255).astype(np.uint8)
-        fmap_pil = Image.fromarray(fmap).resize((90, 90), Image.Resampling.LANCZOS)
-        
-        x = 100 + (i % 8) * 100
-        y = 100 + (i // 8) * 100
-        frame7.paste(fmap_pil, (x, y))
-    
-    draw7.text((950, 250), "🧩 512 Features Profondes", fill='black', font=font_large)
-    draw7.text((950, 290), "(Affichage de 16 sur 512)", fill='gray', font=font_med)
-    frames.append(frame7)
-    
-    # FRAME 8: Softmax output - BETTER BARS
-    frame8 = Image.new('RGB', (frame_width, frame_height), 'white')
-    draw8 = ImageDraw.Draw(frame8)
-    
-    classes = metadata['classes']
-    colors_map = {'Krythik': '#10b981', 'Abyssal': '#3b82f6', 
-                  'Anthroide': '#8b5cf6', 'Fluffony': '#f59e0b'}
-    
-    draw8.text((700, 30), "🎯 Prédiction Finale (Softmax)", fill='black', font=font_large)
-    
-    y_start = 120
-    bar_height = 80
-    for i, (cls, prob) in enumerate(zip(classes, probs.cpu().numpy())):
-        # Bar
-        bar_width = int(prob * 1000)
-        color_hex = colors_map[cls]
-        color_rgb = tuple(int(color_hex[i:i+2], 16) for i in (1, 3, 5))
-        
-        draw8.rectangle([(400, y_start + i*bar_height), (400 + bar_width, y_start + i*bar_height + 60)], 
-                       fill=color_rgb)
-        
-        # Text
-        draw8.text((100, y_start + i*bar_height + 20), f"{cls}", fill='black', font=font_large)
-        draw8.text((1410, y_start + i*bar_height + 20), f"{prob*100:.1f}%", fill='black', font=font_large)
-        
-        # Highlight predicted
-        if i == pred_class:
-            draw8.rectangle([(400, y_start + i*bar_height), (400 + bar_width, y_start + i*bar_height + 60)], 
-                          outline='red', width=5)
-            draw8.text((400 + bar_width + 20, y_start + i*bar_height + 20), "🎯", fill='red', font=font_large)
-    
-    frames.append(frame8)
-    
-    return frames
 
 def overlay_heatmap(image, heatmap, alpha=0.5):
     """Overlay heatmap - with proper dimension handling"""
@@ -1072,8 +885,7 @@ def classify_image(model, image, metadata, image_num):
         pred_class = torch.argmax(probabilities).item()
         confidence = probabilities[pred_class].item()
     
-    all_probs = {metadata['classes'][i]: probabilities[i].item() 
-                 for i in range(len(metadata['classes']))}
+    all_probs = [probabilities[i].item() for i in range(len(metadata['classes']))]
     
     # Grad-CAM with image dependency
     heatmap = compute_gradcam_with_image_dependency(model, image_tensor, pred_class, image_hash)
@@ -1119,7 +931,7 @@ def main():
             🎓 Exploration Interactive de l'Intelligence Artificielle
         </p>
         <p style='margin: 10px 0 0 0; font-size: 1.1em; opacity: 0.85;'>
-            Bienvenue à la planète Zorbalia: Krythik 🦎 Abyssal 🐙 Anthroide 🤖 Fluffony ☁️
+            Bienvenue dans la planète Zorbalia 🦎 🐙 🤖 ☁️
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -1139,7 +951,7 @@ def main():
         <div style='background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); 
                     padding: 20px; border-radius: 15px; text-align: center; 
                     border: 3px solid #3b82f6; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);'>
-            <div style='font-size: 48px; margin-bottom: 10px;'>🧠</div>
+            <div style='font-size: 30px; margin-bottom: 10px;'>🧠</div>
             <div style='font-weight: bold; color: #1e40af; font-size: 1.4em;'>CNN Custom</div>
             <div style='font-size: 0.9em; color: #60a5fa; margin-top: 5px;'>Architecture</div>
             <div style='font-size: 0.8em; color: #93c5fd; margin-top: 5px;'>Basé sur ResNet18</div>
@@ -1151,7 +963,7 @@ def main():
         <div style='background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); 
                     padding: 20px; border-radius: 15px; text-align: center;
                     border: 3px solid #10b981; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);'>
-            <div style='font-size: 48px; margin-bottom: 10px;'>🎯</div>
+            <div style='font-size: 30px; margin-bottom: 10px;'>🎯</div>
             <div style='font-weight: bold; color: #166534; font-size: 1.4em;'>4 Espèces</div>
             <div style='font-size: 0.9em; color: #22c55e; margin-top: 5px;'>Classification</div>
             <div style='font-size: 0.8em; color: #4ade80; margin-top: 5px;'>Multi-classe</div>
@@ -1163,7 +975,7 @@ def main():
         <div style='background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); 
                     padding: 20px; border-radius: 15px; text-align: center;
                     border: 3px solid #f59e0b; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);'>
-            <div style='font-size: 48px; margin-bottom: 10px;'>⚡</div>
+            <div style='font-size: 30px; margin-bottom: 10px;'>⚡</div>
             <div style='font-weight: bold; color: #92400e; font-size: 1.4em;'>~100ms</div>
             <div style='font-size: 0.9em; color: #f59e0b; margin-top: 5px;'>Inférence</div>
             <div style='font-size: 0.8em; color: #fbbf24; margin-top: 5px;'>CPU optimisé</div>
@@ -1175,7 +987,7 @@ def main():
         <div style='background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%); 
                     padding: 20px; border-radius: 15px; text-align: center;
                     border: 3px solid #ec4899; box-shadow: 0 4px 15px rgba(236, 72, 153, 0.3);'>
-            <div style='font-size: 48px; margin-bottom: 10px;'>🎬</div>
+            <div style='font-size: 30px; margin-bottom: 10px;'>🎬</div>
             <div style='font-weight: bold; color: #9f1239; font-size: 1.4em;'>10 Étapes</div>
             <div style='font-size: 0.9em; color: #ec4899; margin-top: 5px;'>Animation</div>
             <div style='font-size: 0.8em; color: #f472b6; margin-top: 5px;'>2200×900px</div>
@@ -1193,8 +1005,8 @@ def main():
             #### 🎯 Onglet 1: Classification
             
             1. **Sélectionnez** une image dans la grille
-            2. **Observez** la prédiction du réseau
-            3. **Explorez** les 6 visualisations Grad-CAM
+            2. **Observez** la prédiction du réseau de Neurone
+            3. **Explorez** les 6 visualisations de Grad
             4. **Ajustez** les sliders de contrôle
             5. **Téléchargez** vos visualisations préférées
             
@@ -1211,23 +1023,24 @@ def main():
             4. **Export:** Créez un GIF téléchargeable
             5. **Observez:** Les filtres en mouvement!
             
+            💡 **Astuce:** Effacer le cache en cas de problème!
             """)
         
         with col_guide3:
             st.markdown("""
             #### 📊 Fonctionnalités Avancées
             
-            - **6 types de Grad-CAM** différents
+            - **6 types de Grad** différents
             - **Heatmap colorée** sur les filtres
             - **Pixels analysés** en temps réel
             - **Métriques** d'activation
             - **Explications** multi-niveaux
             
-            🎓 **Éducatif:** Du niveau 5 ans au niveau expert!
+            🎓 **Éducatif:** C'est cool et fun!
             """)
     
     tab1, tab2 = st.tabs([
-        "🎯 Classification & Grad-CAM Avancé", 
+        "🎯 Classification & Grad Avancé", 
         "🎬 Animation Pédagogique Interactive"
     ])
     
@@ -1240,21 +1053,43 @@ def main():
         with col_left:
             st.subheader("🎲 Images")
             
-            if st.button("🔄 Nouvelles", use_container_width=True, key="btn_new_images"):
-                st.session_state.random_images = load_random_images(12)
-                st.rerun()
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🔄 Nouvelles", width='stretch', key="btn_new_images"):
+                    st.session_state.random_images = load_random_images(12)
+                    # Clear cache to avoid file errors
+                    if 'selected_image' in st.session_state:
+                        del st.session_state.selected_image
+                    if 'last_analyzed' in st.session_state:
+                        del st.session_state.last_analyzed
+                    st.cache_data.clear()
+                    st.rerun()
+            
+            with col_btn2:
+                if st.button("🧹 Nettoyer", width='stretch', key="btn_clear_cache"):
+                    # Clear all cache
+                    st.cache_data.clear()
+                    st.cache_resource.clear()
+                    st.success("Cache nettoyé!")
+                    st.rerun()
             
             if st.session_state.random_images:
                 cols = st.columns(3)
                 for i, img_data in enumerate(st.session_state.random_images):
                     with cols[i % 3]:
-                        img = Image.open(img_data['path'])
-                        st.image(img, width=150)
-                        emoji = species_info[img_data['label']]['emoji']
-                        if st.button(f"{emoji} #{img_data['number']}", key=f"img_{i}", use_container_width=True):
-                            st.session_state.selected_image = img_data
-                            st.session_state.last_analyzed = None
-                            st.rerun()
+                        try:
+                            img = Image.open(img_data['path'])
+                            st.image(img, width=150)
+                            emoji = species_info[img_data['label']]['emoji']
+                            if st.button(f"{emoji} #{img_data['number']}", key=f"img_{i}", width='stretch'):
+                                st.session_state.selected_image = img_data
+                                st.session_state.last_analyzed = None
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur image #{img_data.get('number', '?')}")
+                            if st.button(f"🔄 Recharger", key=f"reload_{i}", width='stretch'):
+                                st.cache_data.clear()
+                                st.rerun()
         
         with col_right:
             st.subheader("🔍 Analyse")
@@ -1266,14 +1101,6 @@ def main():
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
                     st.image(image, width=400)
-                    emoji = species_info[img_data['label']]['emoji']
-                    color = species_info[img_data['label']]['color']
-                    st.markdown(f"""<div style="text-align: center; padding: 20px; 
-                                background: linear-gradient(135deg, {color}15 0%, {color}30 100%);
-                                border-radius: 15px; border: 3px solid {color};">
-                        <h2 style="color: {color}; margin: 0;">{emoji} Espèce Réelle: {img_data['label']}</h2>
-                        <p style="font-size: 14px; color: #1f2937; margin-top: 10px; font-weight: 600;">Image #{img_data['number']}</p>
-                    </div>""", unsafe_allow_html=True)
                 
                 if st.session_state.get('last_analyzed') != img_data['number']:
                     with st.spinner(f'🧠 Analyse de l\'image #{img_data["number"]}...'):
@@ -1292,28 +1119,82 @@ def main():
                 predicted = st.session_state.pred
                 confidence = st.session_state.conf
                 heatmap = st.session_state.heatmap
+                all_probs = st.session_state.probs
                 
                 st.markdown("---")
+                st.markdown("### 📊 Résultats de l'Analyse")
                 
-                if predicted == img_data['label']:
-                    st.markdown(f"""<div class="prediction-correct">
-                        <h2 style="color: #065f46; margin: 0;">✅ Classification Correcte!</h2>
-                        <p style="font-size: 20px; margin-top: 10px; color: #047857; font-weight: 600;">
-                            L'IA a correctement identifié un <strong style="color: #065f46;">{predicted}</strong> 
-                            avec <strong style="color: #065f46;">{confidence*100:.1f}%</strong> de confiance
-                        </p>
-                    </div>""", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""<div class="prediction-wrong">
-                        <h2 style="color: #991b1b; margin: 0;">❌ Erreur de Classification</h2>
-                        <p style="font-size: 20px; margin-top: 10px; color: #b91c1c; font-weight: 600;">
-                            L'IA a prédit <strong style="color: #991b1b;">{predicted}</strong> 
-                            au lieu de <strong style="color: #991b1b;">{img_data['label']}</strong>
-                        </p>
-                        <p style="margin-top: 10px; color: #dc2626; font-weight: 600;">
-                            Confiance: <strong>{confidence*100:.1f}%</strong>
-                        </p>
-                    </div>""", unsafe_allow_html=True)
+                # REORGANIZED: All info at same level with 3 columns
+                res_col1, res_col2, res_col3 = st.columns(3)
+                
+                # Column 1: AI Prediction + Confidence
+                with res_col1:
+                    st.markdown("#### 🤖 Prédiction IA")
+                    emoji = species_info[predicted]['emoji']
+                    color = species_info[predicted]['color']
+                    st.markdown(f"""
+                    <div style='padding: 20px; background: linear-gradient(135deg, {color}15, {color}30); 
+                                border-radius: 10px; border-left: 5px solid {color}; text-align: center;'>
+                        <div style='font-size: 3em;'>{emoji}</div>
+                        <div style='font-size: 1.5em; font-weight: bold; color: {color}; margin-top: 10px;'>
+                            {predicted}
+                        </div>
+                        <div style='font-size: 2em; font-weight: bold; color: #f2c13a; margin-top: 10px;'>
+                            {confidence*100:.1f}%
+                        </div>
+                        <div style='font-size: 0.9em; color: #b8a427; margin-top: 5px;'>
+                            Confiance
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Column 2: All Class Probabilities
+                with res_col2:
+                    st.markdown("#### 📈 Toutes les Probabilités")
+                    for cls, prob in zip(metadata['classes'], all_probs):
+                        cls_color = species_info[cls]['color']
+                        cls_emoji = species_info[cls]['emoji']
+                        is_predicted = (cls == predicted)
+                        
+                        # Bar with gradient
+                        bar_width = int(prob * 100)
+                        border = "3px solid #fbbf24" if is_predicted else "1px solid #e5e7eb"
+                        
+                        st.markdown(f"""
+                        <div style='margin: 8px 0; padding: 8px; background: grey; 
+                                    border-radius: 8px; border: {border};'>
+                            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;'>
+                                <span style='font-weight: 600;'>{cls_emoji} {cls}</span>
+                                <span style='font-weight: bold; color: {cls_color};'>{prob*100:.1f}%</span>
+                            </div>
+                            <div style='width: 100%; height: 10px; background: #f3f4f6; border-radius: 5px; overflow: hidden;'>
+                                <div style='width: {bar_width}%; height: 100%; background: {cls_color};'></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Column 3: Real Class
+                with res_col3:
+                    st.markdown("#### ✅ Espèce Réelle")
+                    real_emoji = species_info[img_data['label']]['emoji']
+                    real_color = species_info[img_data['label']]['color']
+                    is_correct = (predicted == img_data['label'])
+                    
+                    st.markdown(f"""
+                    <div style='padding: 20px; background: linear-gradient(135deg, {real_color}15, {real_color}30); 
+                                border-radius: 10px; border-left: 5px solid {real_color}; text-align: center;'>
+                        <div style='font-size: 3em;'>{real_emoji}</div>
+                        <div style='font-size: 1.5em; font-weight: bold; color: {real_color}; margin-top: 10px;'>
+                            {img_data['label']}
+                        </div>
+                        <div style='font-size: 1.2em; margin-top: 15px;'>
+                            {'✅ CORRECT' if is_correct else '❌ INCORRECT'}
+                        </div>
+                        <div style='font-size: 0.9em; color: #b8a427; margin-top: 5px;'>
+                            Image #{img_data['number']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 st.markdown("---")
                 
@@ -1498,7 +1379,7 @@ def main():
                 
                 download_cols = st.columns(3)
                 with download_cols[0]:
-                    if st.button("📥 Télécharger Overlay", use_container_width=True, key="btn_dl_overlay"):
+                    if st.button("📥 Télécharger Overlay", width='stretch', key="btn_dl_overlay"):
                         buf = io.BytesIO()
                         visualizations[0][1].save(buf, format='PNG')
                         st.download_button(
@@ -1506,11 +1387,11 @@ def main():
                             data=buf.getvalue(),
                             file_name=f"gradcam_overlay_{img_data['number']}.png",
                             mime="image/png",
-                            use_container_width=True
+                            width='stretch'
                         )
                 
                 with download_cols[1]:
-                    if st.button("📥 Télécharger Contours", use_container_width=True, key="btn_dl_contours"):
+                    if st.button("📥 Télécharger Contours", width='stretch', key="btn_dl_contours"):
                         buf = io.BytesIO()
                         visualizations[2][1].save(buf, format='PNG')
                         st.download_button(
@@ -1518,11 +1399,11 @@ def main():
                             data=buf.getvalue(),
                             file_name=f"gradcam_contours_{img_data['number']}.png",
                             mime="image/png",
-                            use_container_width=True
+                            width='stretch'
                         )
                 
                 with download_cols[2]:
-                    if st.button("📥 Télécharger Focus", use_container_width=True, key="btn_dl_focus"):
+                    if st.button("📥 Télécharger Focus", width='stretch', key="btn_dl_focus"):
                         buf = io.BytesIO()
                         visualizations[5][1].save(buf, format='PNG')
                         st.download_button(
@@ -1530,14 +1411,16 @@ def main():
                             data=buf.getvalue(),
                             file_name=f"gradcam_focus_{img_data['number']}.png",
                             mime="image/png",
-                            use_container_width=True
+                            width='stretch'
                         )
                 
                 st.success("🎉 Changez d'image pour voir comment la heatmap varie!")
                 
                 st.markdown("---")
                 st.markdown("#### 🎯 Probabilités")
-                for species, prob in sorted(st.session_state.probs.items(), key=lambda x: x[1], reverse=True):
+                # Create dict from list for sorting
+                probs_dict = {metadata['classes'][i]: st.session_state.probs[i] for i in range(len(metadata['classes']))}
+                for species, prob in sorted(probs_dict.items(), key=lambda x: x[1], reverse=True):
                     emoji = species_info[species]['emoji']
                     color = species_info[species]['color']
                     badges = ""
@@ -1592,7 +1475,7 @@ def main():
                 )
                 
                 # Display selected frame - FULL WIDTH
-                st.image(st.session_state.anim_frames[frame_selector - 1], use_container_width=True)
+                st.image(st.session_state.anim_frames[frame_selector - 1], width='stretch')
                 
                 # Step description
                 step_descriptions = [
@@ -1624,7 +1507,7 @@ def main():
                 )
                 
                 # Auto-play button
-                if st.button("▶️ Lancer l'Animation", use_container_width=True, type="primary", key="btn_play_animation"):
+                if st.button("▶️ Lancer l'Animation", width='stretch', type="primary", key="btn_play_animation"):
                     # Animation container
                     animation_placeholder = st.empty()
                     
@@ -1639,7 +1522,7 @@ def main():
                             progress_bar.progress(progress)
                             
                             # Display frame at FULL WIDTH
-                            frame_display.image(frame, use_container_width=True)
+                            frame_display.image(frame, width='stretch')
                             
                             # Update status with description
                             status_text.info(step_descriptions[i])
@@ -1656,7 +1539,7 @@ def main():
                 st.markdown("---")
                 st.markdown("### 💾 Télécharger l'Animation")
                 
-                if st.button("📥 Créer GIF Animé", use_container_width=True, key="btn_create_gif"):
+                if st.button("📥 Créer GIF Animé", width='stretch', key="btn_create_gif"):
                     with st.spinner("Création du GIF..."):
                         # Create GIF
                         gif_path = f"animation_{img_data['number']}.gif"
@@ -1674,7 +1557,7 @@ def main():
                                 data=f,
                                 file_name=f"alien_classification_{img_data['number']}.gif",
                                 mime="image/gif",
-                                use_container_width=True
+                                width='stretch'
                             )
                         
                         st.success("GIF créé avec succès!")
@@ -1795,23 +1678,23 @@ def main():
                 <div>
                     <div style='font-size: 2em;'>🦊</div>
                     <div style='font-weight: bold;'>Aurélie Boisbunon</div>
-                    <div style='font-size: 0.9em; color: #6b7280;'>AI Researcher & Mathematician</div>
+                    <div style='font-size: 0.9em; color: #6b7280;'>Chercheuse en IA & Mathématicienne</div>
                 </div>
                  <div>
                     <div style='font-size: 2em;'>🐱</div>
                     <div style='font-weight: bold;'>Hinata Flamary</div>
-                    <div style='font-size: 0.9em; color: #6b7280;'>AI Tester</div>
+                    <div style='font-size: 0.9em; color: #6b7280;'>AI Testeuse</div>
                 </div>
                 <div>
                     <div style='font-size: 2em;'>🐼</div>
                     <div style='font-weight: bold;'>Illyyne Saffar</div>
-                    <div style='font-size: 0.9em; color: #6b7280;'>AI Researcher & Computer Science Engineer</div>
+                    <div style='font-size: 0.9em; color: #6b7280;'>Chercheuse en IA & Ingénieure en Informatique</div>
                 </div>
             </div>
             <div style='margin-top: 20px; padding-top: 20px; border-top: 2px solid #e5e7eb;'>
                 <div style='font-size: 1.5em; margin-bottom: 10px;'>🏢</div>
-                <div style='font-weight: bold; font-size: 1.2em;'>Ericsson Research -- Paris France</div>
-                <div style='color: #6b7280; margin-top: 5px;'>Innovation en Intelligence Artificielle</div>
+                <div style='font-weight: bold; font-size: 1.2em;'>Ericsson Research - Paris France </div>
+                <div style='color: #6b7280; margin-top: 5px;'>Laboratoire de recherche et d'innovation en IA</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1823,9 +1706,9 @@ def main():
     st.markdown("""
     <div style='text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 border-radius: 10px; color: white;'>
-        <p style='margin: 0; font-size: 1.1em;'>⭐ Application créée avec ❤️ pour l'éducation en IA</p>
+        <p style='margin: 0; font-size: 1.1em;'> Application créée avec ❤️ pour vulgarisation de l'IA</p>
         <p style='margin: 5px 0 0 0; font-size: 0.9em; opacity: 0.9;'>Version 1.0.0 Final • Production Ready ✅</p>
-        <p style='margin: 5px 0 0 0; font-size: 0.8em; opacity: 0.8;'>© 2026 Ericsson Research France</p>
+        <p style='margin: 5px 0 0 0; font-size: 0.8em; opacity: 0.8;'>© 2026 Ericsson Research</p>
     </div>
     """, unsafe_allow_html=True)
 

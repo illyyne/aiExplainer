@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 Quick launcher for the Alien Classifier system
-Runs Streamlit on the correct port
+Runs Streamlit on the correct port with auto-browser opening
 """
 
 import subprocess
 import sys
-import os
+import webbrowser
 from pathlib import Path
+from threading import Timer
 
 def check_requirements():
     """Check if requirements are installed"""
@@ -15,22 +16,21 @@ def check_requirements():
         import torch
         import streamlit
         import cv2
-        print("All dependencies installed")
+        print("Toutes les dépendances sont installées")
         return True
     except ImportError as e:
-        print(f"Missing dependency: {e}")
-        print("\nInstall with: pip install -r requirements.txt")
+        print(f"Dépendance manquante: {e}")
+        print("\nInstallez avec: pip install -r requirements.txt")
         return False
 
 def check_model():
     """Check if model is trained"""
     model_path = Path('models/alien_classifier_best.pth')
     if model_path.exists():
-        print("Model found")
+        print("Modèle entrainé trouvé")
         return True
     else:
-        print("Model not found")
-        print("\nTrain model first with: python train_model.py")
+        print("✗ Modèle non trouvé")
         return False
 
 def check_dataset():
@@ -39,58 +39,123 @@ def check_dataset():
     csv_path = Path('images/class/classification.csv')
     
     if not images_dir.exists():
-        print("Images directory not found: images/aliens/")
+        print("Répertoire images introuvable: images/aliens/")
         return False
     
     if not csv_path.exists():
-        print("CSV file not found: images/class/classification.csv")
+        print("Fichier CSV des labels introuvable: images/class/classification.csv")
         return False
     
     num_images = len(list(images_dir.glob('*.*')))
-    print(f"✓ Dataset found ({num_images} images)")
+    print(f"Dataset trouvé ({num_images} images)")
     return True
 
-def run_streamlit():
-    """Run Streamlit app on port 8502"""
+def open_browser(port=8502):
+    """Open browser after a short delay"""
+    def _open():
+        url = f'http://localhost:{port}'
+        print(f"\nOuverture du navigateur: {url}")
+        webbrowser.open(url)
+    
+    # Wait 3 seconds for Streamlit to start
+    Timer(3.0, _open).start()
+
+def train_model():
+    """Train the model"""
+    print("\n" + "="*60)
+    print("🎓 Entraînement du modèle...")
+    print("="*60 + "\n")
+    
+    try:
+        result = subprocess.run(
+            [sys.executable, 'train_model.py'],
+            check=True
+        )
+        print("\n✓ Modèle entraîné avec succès!")
+        return True
+    except subprocess.CalledProcessError:
+        print("\n✗ Erreur lors de l'entraînement")
+        return False
+    except FileNotFoundError:
+        print("\n✗ train_model.py introuvable")
+        return False
+
+def run_streamlit(port=8502):
+    """Run Streamlit app on specified port"""
     print("\n" + "="*60)
     print("Lancement de l'interface Streamlit...")
     print("="*60)
-    print("\nURL: http://localhost:8502")
-    print("\nPour arrêter: Ctrl+C")
+    print(f"\nURL: http://localhost:{port}")
+    print("Le navigateur va s'ouvrir automatiquement dans 3 secondes...")
+    print("\nPour arrêter: Ctrl+C dans ce terminal")
     print("="*60 + "\n")
+    
+    # Open browser automatically
+    open_browser(port)
     
     try:
         subprocess.run([
             sys.executable, '-m', 'streamlit', 'run',
             'streamlit_app.py',
-            '--server.port', '8502',
-            '--server.headless', 'true'
+            '--server.port', str(port),
+            '--server.headless', 'true',
+            '--browser.serverAddress', 'localhost',
+            '--browser.gatherUsageStats', 'false'
         ])
     except KeyboardInterrupt:
-        print("\n\n Arrêt de l'application")
+        print("\n\nArrêt de l'application")
+    except FileNotFoundError:
+        print("\nstreamlit_app.py introuvable")
+        print("Assurez-vous d'être dans le bon répertoire")
+        sys.exit(1)
 
 def main():
-    print("\n🛸 Alien Classifier - Launcher")
+    print("\n" + "="*60)
+    print("🛸 Alien Classifier - Ericsson Research")
     print("="*60)
+    print("\n📋 Vérification du système...")
+    print()
     
-    # Check everything
+    # Check dataset
     if not check_dataset():
+        print("\nDataset manquant.")
         sys.exit(1)
     
+    # Check dependencies
     if not check_requirements():
+        print("\nDépendances manquantes.")
+        print("Exécutez: pip install -r requirements.txt")
         sys.exit(1)
     
+    # Check and train model if needed
     if not check_model():
-        print("\n❓ Voulez-vous entraîner le modèle maintenant? (o/n): ", end='')
-        response = input().lower()
-        if response == 'o':
-            print("\n🎓 Entraînement du modèle...")
-            subprocess.run([sys.executable, 'train_model.py'])
-        else:
-            print("\n✋ Veuillez entraîner le modèle avec: python train_model.py")
-            sys.exit(1)
+        print("\n" + "="*60)
+        print("Le modèle n'est pas encore entraîné")
+        print("="*60)
+        print("\n🎯 Options:")
+        print("  1. Entraîner maintenant (recommandé)")
+        print("  2. Quitter et entraîner manuellement")
+        print()
+        
+        try:
+            choice = input("Votre choix (1/2): ").strip()
+            
+            if choice == '1':
+                if not train_model():
+                    print("\nImpossible de continuer sans modèle")
+                    sys.exit(1)
+            else:
+                print("\nPour entraîner manuellement:")
+                print("python train_model.py")
+                print("\n👋 Au revoir!")
+                sys.exit(0)
+        except KeyboardInterrupt:
+            print("\n\n👋 Annulé")
+            sys.exit(0)
     
-    # Run Streamlit
+    print("\nTous les composants sont prêts!")
+    
+    # Run Streamlit with auto-open browser
     run_streamlit()
 
 if __name__ == '__main__':
