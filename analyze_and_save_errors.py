@@ -125,7 +125,7 @@ def analyze_all_predictions():
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
     
-    print(f"\n✅ Analysis complete!")
+    print(f"\nAnalysis complete!")
     print(f"Total images: {total}")
     print(f"Correct: {len(results['correct'])} ({accuracy*100:.1f}%)")
     print(f"Errors: {len(results['errors'])} ({(1-accuracy)*100:.1f}%)")

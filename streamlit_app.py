@@ -2031,7 +2031,7 @@ def main():
     st.markdown("---")
     st.markdown("### 👥 Contributeurs")
     
-    col_contrib1, col_contrib2, col_contrib3 = st.columns([1, 1, 1])
+    col_contrib1, col_contrib2, col_contrib3 = st.columns([1, 3, 1])
     
     with col_contrib1:
         st.markdown("")
@@ -2048,7 +2048,7 @@ def main():
                  <div>
                     <div style='font-size: 2em;'>🐱</div>
                     <div style='font-weight: bold;'>Hinata Flamary</div>
-                    <div style='font-size: 0.9em; color: #6b7280;'>AI Testeuse</div>
+                    <div style='font-size: 0.9em; color: #6b7280;'>Testeuse IA</div>
                 </div>
                 <div>
                     <div style='font-size: 2em;'>🐼</div>

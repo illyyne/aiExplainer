@@ -1,6 +1,7 @@
 # OS files
 .DS_Store
 Thumbs.db
+__pycache__/
 
 # Editor directories
 .vscode/
@@ -18,3 +19,4 @@ node_modules/
 # Build outputs
 dist/
 build/
+ecole/
